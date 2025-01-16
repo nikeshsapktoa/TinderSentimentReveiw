@@ -1,0 +1,195 @@
+from google_play_scraper import reviews
+import csv
+import pandas as pd
+from textblob import TextBlob
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+import nltk
+
+# Step 1: Function to fetch reviews with pagination
+def fetch_reviews(app_id, count=100):
+    all_reviews = []
+    continuation_token = None
+
+    while len(all_reviews) < count:
+        review_list, continuation_token = reviews(
+            app_id,
+            count=min(100, count - len(all_reviews)),  # Fetch up to 100 reviews at a time
+            continuation_token=continuation_token
+        )
+        all_reviews.extend(review_list)
+
+        # Stop if no more reviews are available
+        if not continuation_token:
+            break
+
+    return all_reviews
+
+# Step 2: Fetch Reviews
+review_list = fetch_reviews('com.tinder', count=500)  # Fetch 500 reviews
+
+# Step 3: Save Reviews to CSV
+csv_filename = 'tinder_reviews.csv'
+
+# If file doesn't exist, create and write the header
+file_exists = False
+try:
+    with open(csv_filename, 'r', newline='', encoding='utf-8') as file:
+        file_exists = True
+except FileNotFoundError:
+    pass
+
+# Save reviews into a CSV file
+with open(csv_filename, 'a', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    
+    # Write header only if the file is new (not existing)
+    if not file_exists:
+        writer.writerow(["User Name", "Review", "Rating"])
+
+    # Append the reviews data
+    if review_list:
+        for review in review_list:
+            writer.writerow([review['userName'], review['content'], review['score']])
+    else:
+        print("No reviews were fetched.")
+
+# Step 4: Load Reviews into DataFrame
+df = pd.read_csv(csv_filename)
+
+# Step 5: Sentiment Analysis Function
+def get_sentiment(text):
+    analysis = TextBlob(text)
+    polarity = analysis.sentiment.polarity
+    if polarity > 0:
+        return 'positive'
+    elif polarity < 0:
+        return 'negative'
+    else:
+        return 'neutral'
+
+# Step 6: Apply Sentiment Analysis
+df['sentiment'] = df['Review'].apply(get_sentiment)
+
+# Step 7: Save Reviews with Sentiment to a New CSV
+df.to_csv('tinder_reviews_with_sentiment.csv', index=False)
+
+# Step 8: Visualize Sentiment Distribution
+plt.figure(figsize=(8, 6))
+sns.countplot(data=df, x='sentiment', palette='Set2')
+plt.title('Sentiment Distribution of Tinder Reviews')
+plt.xlabel('Sentiment')
+plt.ylabel('Number of Reviews')
+plt.show()
+
+# Print the first few rows of the DataFrame with sentiment
+print(df[['User Name', 'Review', 'sentiment']].head())
+
+# Step 9: Machine Learning - Prepare Data for Training
+# Label Encoding the Sentiments (assuming 'df' already contains 'sentiment')
+df['sentiment_encoded'] = df['sentiment'].map({'negative': 0, 'neutral': 1, 'positive': 2})
+
+# TF-IDF Vectorizer for Feature Extraction
+vectorizer = TfidfVectorizer(max_features=5000)
+X = vectorizer.fit_transform(df['Review']).toarray()  # Convert reviews to numerical features
+y = df['sentiment_encoded']  # Target variable (sentiment)
+
+# Step 10: Split Data into Training and Test Sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Step 11: Train Logistic Regression Model
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+# Step 12: Make Predictions
+y_pred = model.predict(X_test)
+
+# Step 13: Evaluate the Model
+print(f"Accuracy: {accuracy_score(y_test, y_pred) * 100:.2f}%")
+
+# Step 14: Confusion Matrix and Classification Report
+print("Classification Report:\n", classification_report(y_test, y_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+
+# Step 15: Visualize the Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Negative', 'Neutral', 'Positive'], yticklabels=['Negative', 'Neutral', 'Positive'])
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.show()
+
+
+vectorizer = TfidfVectorizer(max_features=5000)
+X = vectorizer.fit_transform(df['Review']).toarray()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+print(f"Accuracy: {accuracy_score(y_test, y_pred) * 100:.2f}%")
+print("Classification Report:\n", classification_report(y_test, y_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+
+cm = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Negative', 'Neutral', 'Positive'], yticklabels=['Negative', 'Neutral', 'Positive'])
+from sklearn.model_selection import GridSearchCV
+
+param_grid = {'C': [0.1, 1, 10, 100]}
+grid_search = GridSearchCV(LogisticRegression(max_iter=1000), param_grid, cv=5)
+grid_search.fit(X_train, y_train)
+
+best_model = grid_search.best_estimator_
+
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+stop_words = set(stopwords.words('english'))
+lemmatizer = WordNetLemmatizer()
+
+def preprocess_text(text):
+    text = ' '.join([lemmatizer.lemmatize(word) for word in text.split() if word not in stop_words])
+    return text
+
+df['clean_review'] = df['Review'].apply(preprocess_text)
+
+rf_model = RandomForestClassifier(n_estimators=100)
+rf_model.fit(X_train, y_train)
+y_bin = label_binarize(y_test, classes=[0, 1, 2])
+y_prob = model.predict_proba(X_test)
+fpr = {}
+tpr = {}
+roc_auc = {}
+
+for i in range(3):
+  fpr[i], tpr[i], _ = roc_curve(y_bin[:, i], y_prob[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+
+plt.figure(figsize=(8, 6))
+colors = ['blue', 'green', 'red']
+for i, color in zip(range(3), colors):
+    plt.plot(fpr[i], tpr[i], color=color, lw=2, label=f'Class {i} (AUC = {roc_auc[i]:.2f})')
+
+
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+
+
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.legend(loc='lower right')
+plt.show()
+
+
+
+
